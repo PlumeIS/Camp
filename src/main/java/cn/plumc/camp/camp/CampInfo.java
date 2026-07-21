@@ -83,6 +83,7 @@ public class CampInfo {
     public boolean kickMember(UUID handler, UUID uuid) {
         if (!hasExistingMember(uuid)) return false;
         getExistingMember(uuid).kick();
+        members.remove(uuid);
         log(handler, "踢出成员 %s".formatted(plugin.getServer().getOfflinePlayer(uuid).getName()));
         return true;
     }
