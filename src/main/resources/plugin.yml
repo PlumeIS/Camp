@@ -1,0 +1,8 @@
+name: Camp
+version: '${version}'
+
+main: cn.plumc.camp.Camp
+api-version: '1.18'
+load: POSTWORLD
+
+authors: [ PlumeIS ]
