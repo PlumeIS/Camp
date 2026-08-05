@@ -12,14 +12,14 @@ import java.util.List;
 
 public class CampCommand implements TabCompleter, CommandExecutor {
     enum SubCommands{
-        CREATE("create"),
-        DISBAND("disband"),
-        LIST("list"),
-        AUTH("auth"),
-        JOIN("join"),
-        LEAVE("leave"),
-        MODIFY("modify"),
-        MEMBER("member");
+        CREATE("create"),   // camp.create[default]
+        DISBAND("disband"), // camp.disband[isAdmin|op]
+        LIST("list"),       // camp.list[default] ; camp.list.camp[isMember]
+        AUTH("auth"),       // camp.auth.rankup[isOwner|op] ; camp.auth.rankdown[isOwner|op]
+        JOIN("join"),       // camp.join[!isMember] ; camp.join.other[op]
+        LEAVE("leave"),     // camp.leave[!isMember] ; camp.leave.other[op]
+        MODIFY("modify"),   // camp.modify.name[isAdmin|op] ; camp.modify.color[isAdmin|op] ; camp.rule[isAdmin|op]
+        MEMBER("member");   // camp.invite[isMember] ; camp.accept[isAdmin|op] ; camp.reject[isAdmin|op] ; camp.kick[isAdmin|op] ; camp.ban[isAdmin|op]; camp.pardon[isAdmin|op]
         final String command;
         SubCommands(String command) {
             this.command = command;
@@ -39,6 +39,7 @@ public class CampCommand implements TabCompleter, CommandExecutor {
 
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
+
         return false;
     }
 
