@@ -6,3 +6,9 @@ api-version: '1.18'
 load: POSTWORLD
 
 authors: [ PlumeIS ]
+
+commands:
+  usage: ABABAB
+  permissions:
+    camp.create: default
+    camp.disband: default
