@@ -19,7 +19,7 @@ public class CampCommand implements TabCompleter, CommandExecutor {
         JOIN("join"),       // camp.join[!isMember] ; camp.join.other[op]
         LEAVE("leave"),     // camp.leave[!isMember] ; camp.leave.other[op]
         MODIFY("modify"),   // camp.modify.name[isAdmin|op] ; camp.modify.color[isAdmin|op] ; camp.rule[isAdmin|op]
-        MEMBER("member");   // camp.invite[isMember] ; camp.accept[isAdmin|op] ; camp.reject[isAdmin|op] ; camp.kick[isAdmin|op] ; camp.ban[isAdmin|op]; camp.pardon[isAdmin|op]
+        MEMBER("member");   // camp.member.invite[isMember] ; camp.member.accept[isAdmin|op] ; camp.member.reject[isAdmin|op] ; camp.member.kick[isAdmin|op] ; camp.member.ban[isAdmin|op]; camp.member.pardon[isAdmin|op]
         final String command;
         SubCommands(String command) {
             this.command = command;
