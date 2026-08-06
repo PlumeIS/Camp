@@ -2,6 +2,7 @@ package cn.plumc.camp;
 
 import cn.plumc.camp.camp.CampInfo;
 import cn.plumc.camp.camp.Member;
+import cn.plumc.camp.commands.CampCommand;
 import net.kyori.adventure.text.Component;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scoreboard.Scoreboard;
@@ -12,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public final class Camp extends JavaPlugin {
@@ -31,15 +33,17 @@ public final class Camp extends JavaPlugin {
     public void onEnable() {
         excepts = getConfig().getStringList("excepts");
         scoreboard = getServer().getScoreboardManager().getMainScoreboard();
+        getServer().getPluginCommand("camp").setExecutor(new CampCommand());
         loadCamps();
     }
 
     public void loadCamps() {
         camps.clear();
         for (Team team : scoreboard.getTeams()) {
-            if (!excepts.contains(team.getName())) continue;
+            if (excepts.contains(team.getName())) continue;
             camps.add(new CampInfo(this, team));
         }
+        logger.info("Loaded " + camps.size() + " camps");
     }
 
     public void createCamp(@Nullable UUID owner, String id, String name) {
@@ -71,7 +75,7 @@ public final class Camp extends JavaPlugin {
     }
 
     public Member getMember(UUID player) {
-        if (isCampMember(player)) return null;
+        if (!isCampMember(player)) return null;
         for (CampInfo camp : camps) {
             if (camp.getExistingMember(player) != null) return camp.getExistingMember(player);
         }

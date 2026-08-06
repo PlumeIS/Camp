@@ -20,7 +20,7 @@ public class Member {
             return permissionPrefix+"."+uuid.toString();
         }
         public static UUID uuid(String permission) {
-            return UUID.fromString(permission.substring(permission.indexOf(".", 1)+1));
+            return UUID.fromString(permission.substring(permission.lastIndexOf(".")+1));
         }
         public static boolean in(Permissions permission, Team team, UUID uuid){
             return team.hasEntry(permission.to(uuid));

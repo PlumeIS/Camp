@@ -1,13 +1,19 @@
 package cn.plumc.camp.camp;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.format.TextColor;
+import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import org.bukkit.ChatColor;
+import org.bukkit.Color;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.Server;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scoreboard.Team;
 
 import java.util.*;
+import java.util.List;
 
 public class CampInfo {
     private HashMap<UUID, Member> members;
@@ -17,6 +23,7 @@ public class CampInfo {
     public InviteRule inviteRule;
     public String id;
     public Component name;
+    public String nameContent;
     public TextColor color;
 
     public CampInfo(Plugin plugin, Team team){
@@ -25,7 +32,8 @@ public class CampInfo {
         this.inviteRule = InviteRule.get(team);
         this.id = team.getName();
         this.name = team.displayName();
-        this.color = team.color();
+        this.nameContent = MiniMessage.miniMessage().serialize(name);
+        this.color = team.hasColor() ? team.color() : TextColor.color(Color.WHITE.asRGB());
         this.tempLogs = new HashMap<>();
         loadMember();
     }
@@ -35,7 +43,7 @@ public class CampInfo {
         Server server = plugin.getServer();
         for (String entry : team.getEntries()) {
             if (Member.Permissions.isPermission(entry)) players.add(server.getOfflinePlayer(Member.Permissions.uuid(entry)));
-            if (!InviteRule.isInviteRule(entry)) players.add(server.getOfflinePlayer(entry));
+            else if (!InviteRule.isInviteRule(entry)) players.add(server.getOfflinePlayer(entry));
         }
         this.members = new HashMap<>();
         for (OfflinePlayer player : players) {

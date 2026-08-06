@@ -4,6 +4,8 @@ import cn.plumc.camp.Camp;
 import cn.plumc.camp.camp.CampInfo;
 import cn.plumc.camp.camp.Member;
 import cn.plumc.camp.utils.SenderChecker;
+import net.kyori.adventure.text.TextComponent;
+import net.kyori.adventure.text.format.TextColor;
 import org.apache.commons.lang.StringUtils;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
@@ -20,8 +22,8 @@ import java.util.List;
 import java.util.logging.Level;
 
 public class CampCommand implements TabCompleter, CommandExecutor {
-    public static final String PREFIX = "&8[&aCamp&8]&f";
-    public static final String CAMP_ID_PATTERN = "[a-zA-Z0-9_]";
+    public static final String PREFIX = "&8[&aCamp&8]&f ";
+    public static final String CAMP_ID_PATTERN = "\\w+";
 
     enum SubCommands{
         CREATE("create"),   // camp.create[default]
@@ -59,7 +61,6 @@ public class CampCommand implements TabCompleter, CommandExecutor {
         if (args.length == 0) {return help(sender);}
 
         SenderChecker senderChecker = new SenderChecker(sender);
-
         try {
             return switch (SubCommands.fromString(args[0])) {
                 case CREATE -> create(sender, args, senderChecker);
@@ -87,7 +88,7 @@ public class CampCommand implements TabCompleter, CommandExecutor {
         }
         if (checker.nonplayer().all) return failure(sender, "此命令必须由玩家执行。");
         if (checker.member().all) return failure(sender, "你已在一个阵营内。");
-        if (args.length != 3 || !String.valueOf(args[1]).matches(CAMP_ID_PATTERN)) return failure(sender, "参数错误。");
+        if (args.length != 3 || !args[1].matches(CAMP_ID_PATTERN)) return failure(sender, "参数错误。");
         if (checker.np("camp.create").nonop().all) return failure(sender, "权限不足。");
 
         Camp.INSTANCE.createCamp(checker.toUUID(), args[1], args[2]);
@@ -113,7 +114,7 @@ public class CampCommand implements TabCompleter, CommandExecutor {
         if (args.length == 1) {
             if (checker.np("camp.list").nonop().all) return failure(sender, "权限不足。");
             for (CampInfo camp : Camp.INSTANCE.camps) {
-                success(sender, "| id: %s | 名称: %s | 人数: %s |".formatted(camp.id, camp.name, camp.getMembers().size()));
+                success(sender, "| id: %s | 名称: %s | 人数: %s |".formatted(camp.id, camp.nameContent, camp.getMembers().size()));
                 return true;
             }
         }
@@ -122,11 +123,11 @@ public class CampCommand implements TabCompleter, CommandExecutor {
             if (!checker.camp(args[1]).all) return failure(sender, "无此阵营。");
             CampInfo camp = Camp.INSTANCE.getCamp(args[1]);
             success(sender, "========================================");
-            success(sender, "阵营: %s".formatted(camp.color+camp.name.toString()));
+            success(sender, "阵营: %s".formatted(camp.nameContent));
             int counter = 0;
             StringBuilder sb = new StringBuilder();
             for (Member member : camp.getMembers().values()) {
-                sb.append(member.player.isOnline() ? ChatColor.GREEN : ChatColor.RED + "●");
+                sb.append(member.player.isOnline() ? ChatColor.GREEN : ChatColor.GRAY).append("●");
                 sb.append(ChatColor.WHITE).append(member.name).append(" ");
                 counter++;
                 if (counter >= 2) {
@@ -165,12 +166,12 @@ public class CampCommand implements TabCompleter, CommandExecutor {
     }
 
     public boolean failure(CommandSender sender, String message) {
-        sender.sendMessage(PREFIX + ChatColor.RED + message);
+        sender.sendMessage((PREFIX + ChatColor.RED + message).replace("&", "§"));
         return true;
     }
 
     public boolean success(CommandSender sender, String message) {
-        sender.sendMessage(PREFIX + message);
+        sender.sendMessage((PREFIX + message).replace("&", "§"));
         return true;
     }
 

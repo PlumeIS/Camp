@@ -8,7 +8,19 @@ load: POSTWORLD
 authors: [ PlumeIS ]
 
 commands:
-  usage: ABABAB
-  permissions:
-    camp.create: default
-    camp.disband: default
+  camp:
+    description: Main command of Camp
+    usage: /<command> [create/disband/list/auth/modify/member]
+    permissions: camp
+
+permissions:
+  camp:
+    default: true
+  camp.create:
+    default: true
+  camp.disband:
+    default: true
+  camp.list:
+    default: true
+  camp.list.camp:
+    default: true
