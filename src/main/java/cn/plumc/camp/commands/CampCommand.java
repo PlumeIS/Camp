@@ -1,6 +1,8 @@
 package cn.plumc.camp.commands;
 
 import cn.plumc.camp.Camp;
+import cn.plumc.camp.camp.CampInfo;
+import cn.plumc.camp.camp.Member;
 import cn.plumc.camp.utils.SenderChecker;
 import org.apache.commons.lang.StringUtils;
 import org.bukkit.ChatColor;
@@ -24,7 +26,7 @@ public class CampCommand implements TabCompleter, CommandExecutor {
     enum SubCommands{
         CREATE("create"),   // camp.create[default]
         DISBAND("disband"), // camp.disband[isOwner|op]
-        LIST("list"),       // camp.list[default] ; camp.list.camp[isMember]
+        LIST("list"),       // camp.list[default] ; camp.list.member[default]
         AUTH("auth"),       // camp.auth.rankup[isOwner|op] ; camp.auth.rankdown[isOwner|op]
         JOIN("join"),       // camp.join[!isMember] ; camp.join.other[op]
         LEAVE("leave"),     // camp.leave[!isMember] ; camp.leave.other[op]
@@ -78,37 +80,64 @@ public class CampCommand implements TabCompleter, CommandExecutor {
     }
 
     public boolean create(CommandSender sender, String[] args, SenderChecker checker) {
-        if (checker.op().console().result) {
+        if (checker.op().console().all) {
             if (args.length != 3 || !String.valueOf(args[1]).matches(CAMP_ID_PATTERN)) return failure(sender, "参数错误。");
             Camp.INSTANCE.createCamp(null, args[1], args[2]);
             return success(sender, "阵营已创建。");
         }
-        if (checker.nonplayer().result) return failure(sender, "此命令必须由玩家执行。");
-        if (checker.member().result) return failure(sender, "你已在一个阵营内。");
+        if (checker.nonplayer().all) return failure(sender, "此命令必须由玩家执行。");
+        if (checker.member().all) return failure(sender, "你已在一个阵营内。");
         if (args.length != 3 || !String.valueOf(args[1]).matches(CAMP_ID_PATTERN)) return failure(sender, "参数错误。");
-        if (checker.np("camp.create").result) return failure(sender, "权限不足。");
+        if (checker.np("camp.create").nonop().all) return failure(sender, "权限不足。");
 
         Camp.INSTANCE.createCamp(checker.toUUID(), args[1], args[2]);
         return success(sender, "阵营已创建。");
     }
 
     public boolean disband(CommandSender sender, String[] args, SenderChecker checker) {
-        if (args.length >= 2 && checker.op().result) {
+        if (args.length >= 2 && checker.op().all) {
             if (!Camp.INSTANCE.hasCamp(args[1])) return failure(sender, "无此阵营。");
             Camp.INSTANCE.disbandCamp(args[1]);
             return success(sender, "阵营已解散。");
         }
-        if (checker.nonplayer().result) return failure(sender, "此命令必须由玩家执行。");
-        if (checker.nonmember().result) return failure(sender, "你不处于任何一个阵营。");
-        if (!checker.owner().result) return failure(sender, "你不是当前阵营的拥有者。");
-        if (checker.np("camp.disband").result) return failure(sender, "权限不足。");
+        if (checker.nonplayer().all) return failure(sender, "此命令必须由玩家执行。");
+        if (checker.nonmember().all) return failure(sender, "你不处于任何一个阵营。");
+        if (!checker.owner().all) return failure(sender, "你不是当前阵营的拥有者。");
+        if (checker.np("camp.disband").nonop().all) return failure(sender, "权限不足。");
 
         Camp.INSTANCE.disbandCamp(Camp.INSTANCE.getCamp(checker.toUUID()).id);
         return success(sender, "阵营已解散。");
     }
 
     public boolean list(CommandSender sender, String[] args, SenderChecker checker) {
-        return true;
+        if (args.length == 1) {
+            if (checker.np("camp.list").nonop().all) return failure(sender, "权限不足。");
+            for (CampInfo camp : Camp.INSTANCE.camps) {
+                success(sender, "| id: %s | 名称: %s | 人数: %s |".formatted(camp.id, camp.name, camp.getMembers().size()));
+                return true;
+            }
+        }
+        if (args.length == 2) {
+            if (checker.np("camp.list.member").nonop().all) return failure(sender, "权限不足。");
+            if (!checker.camp(args[1]).all) return failure(sender, "无此阵营。");
+            CampInfo camp = Camp.INSTANCE.getCamp(args[1]);
+            success(sender, "========================================");
+            success(sender, "阵营: %s".formatted(camp.color+camp.name.toString()));
+            int counter = 0;
+            StringBuilder sb = new StringBuilder();
+            for (Member member : camp.getMembers().values()) {
+                sb.append(member.player.isOnline() ? ChatColor.GREEN : ChatColor.RED + "●");
+                sb.append(ChatColor.WHITE).append(member.name).append(" ");
+                counter++;
+                if (counter >= 2) {
+                    success(sender, sb.toString());
+                    sb = new StringBuilder();
+                }
+            }
+            success(sender, sb.toString());
+            return success(sender, "========================================");
+        }
+        return false;
     }
 
     public boolean auth(CommandSender sender, String[] args, SenderChecker checker) {

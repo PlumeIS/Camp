@@ -1,6 +1,7 @@
 package cn.plumc.camp.camp;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.TextColor;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.Server;
 import org.bukkit.plugin.Plugin;
@@ -16,6 +17,7 @@ public class CampInfo {
     public InviteRule inviteRule;
     public String id;
     public Component name;
+    public TextColor color;
 
     public CampInfo(Plugin plugin, Team team){
         this.plugin = plugin;
@@ -23,6 +25,7 @@ public class CampInfo {
         this.inviteRule = InviteRule.get(team);
         this.id = team.getName();
         this.name = team.displayName();
+        this.color = team.color();
         this.tempLogs = new HashMap<>();
         loadMember();
     }
