@@ -24,3 +24,7 @@ permissions:
     default: true
   camp.list.camp:
     default: true
+  camp.auth.rankup:
+    default: true
+  camp.auth.rankdown:
+    default: true

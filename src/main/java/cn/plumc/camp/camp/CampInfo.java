@@ -16,7 +16,7 @@ import java.util.*;
 import java.util.List;
 
 public class CampInfo {
-    private HashMap<UUID, Member> members;
+    public HashMap<UUID, Member> members;
     public HashMap<Long, String> tempLogs;
     public Plugin plugin;
     public Team team;

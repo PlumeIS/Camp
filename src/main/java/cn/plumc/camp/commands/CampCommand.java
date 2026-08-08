@@ -4,26 +4,24 @@ import cn.plumc.camp.Camp;
 import cn.plumc.camp.camp.CampInfo;
 import cn.plumc.camp.camp.Member;
 import cn.plumc.camp.utils.SenderChecker;
-import net.kyori.adventure.text.TextComponent;
-import net.kyori.adventure.text.format.TextColor;
-import org.apache.commons.lang.StringUtils;
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
-import org.bukkit.entity.Player;
-import org.bukkit.permissions.Permission;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 import java.util.logging.Level;
 
 public class CampCommand implements TabCompleter, CommandExecutor {
     public static final String PREFIX = "&8[&aCamp&8]&f ";
     public static final String CAMP_ID_PATTERN = "\\w+";
+
+    public static final HashMap<UUID, UUID> rankUpConfirms = new HashMap<>();
 
     enum SubCommands{
         CREATE("create"),   // camp.create[default]
@@ -122,7 +120,7 @@ public class CampCommand implements TabCompleter, CommandExecutor {
             if (checker.np("camp.list.member").nonop().all) return failure(sender, "权限不足。");
             if (!checker.camp(args[1]).all) return failure(sender, "无此阵营。");
             CampInfo camp = Camp.INSTANCE.getCamp(args[1]);
-            success(sender, "========================================");
+            success(sender, ChatColor.GRAY+"========================================");
             success(sender, "阵营: %s".formatted(camp.nameContent));
             int counter = 0;
             StringBuilder sb = new StringBuilder();
@@ -136,13 +134,53 @@ public class CampCommand implements TabCompleter, CommandExecutor {
                 }
             }
             success(sender, sb.toString());
-            return success(sender, "========================================");
+            return success(sender, ChatColor.GRAY+"========================================");
         }
         return false;
     }
 
     public boolean auth(CommandSender sender, String[] args, SenderChecker checker) {
-        return true;
+        if (!checker.member().op().any) return failure(sender, "你不处于任何一个阵营。");
+        if (args.length != 3) return failure(sender, "参数错误。");
+        OfflinePlayer target = Bukkit.getServer().getOfflinePlayer(args[2]);
+        if (!Camp.INSTANCE.isCampMember(target.getUniqueId())) return failure(sender, "目标不处于任何一个阵营。");
+        CampInfo camp = Camp.INSTANCE.getCamp(target.getUniqueId());
+        if (!(checker.op().all || (checker.player().all && camp.hasExistingMember(checker.toUUID())))) return failure(sender, "你与目标不处于同一阵营。");
+        if (!(checker.op().all || camp.getExistingMember(checker.toUUID()).isOwner())) return failure(sender, "你不是阵营拥有者。");
+        Member member = camp.getExistingMember(target.getUniqueId());
+        UUID handler = checker.player().all ? checker.toUUID() : UUID.nameUUIDFromBytes(Bukkit.getConsoleSender().getName().getBytes());
+        if (args[1].equalsIgnoreCase("rankup")) {
+            if (checker.nonop().all && member.uuid.equals(handler)) return failure(sender, "你不能提升自己的权限。");
+            if (checker.np("camp.auth.rankup").nonop().all) return failure(sender, "权限不足。");
+            if (!member.isAdmin()) {
+                camp.setAdmin(handler, member.uuid, true);
+                return success(sender, "%s 已成为管理员。".formatted(member.name));
+            }
+            else {
+                if (rankUpConfirms.containsKey(handler) && rankUpConfirms.get(handler).equals(member.uuid)) {
+                    camp.setOwner(handler, member.uuid);
+                    rankUpConfirms.remove(handler);
+                    return success(sender, "%s 已成为新的阵营拥有者。".formatted(member.name));
+                } else {
+                    rankUpConfirms.put(handler, member.uuid);
+                    Bukkit.getScheduler().runTaskLater(Camp.INSTANCE, ()->{
+                        if (rankUpConfirms.containsKey(handler)) success(sender, ChatColor.GRAY+"交换已取消");
+                        rankUpConfirms.remove(handler);
+                    }, 20*20);
+                    return success(sender, ChatColor.YELLOW+"正在交换拥有者，请在20s内再次输入重复命令以确认交换。");
+                }
+            }
+        }
+        if (args[1].equalsIgnoreCase("rankdown")) {
+            if (checker.nonop().all && member.uuid.equals(handler)) return failure(sender, "你不能降低自己的权限，请使用/camp auth rankup <target>转让拥有者。");
+            if (checker.np("camp.auth.rankdown").nonop().all) return failure(sender, "权限不足。");
+            if (member.isAdmin()) {
+                camp.setAdmin(handler, member.uuid, false);
+                return success(sender, "%s 已被罢免。".formatted(member.name));
+            }
+            else return failure(sender, "目标不是管理员。");
+        }
+        return failure(sender, "参数错误。");
     }
 
     public boolean join(CommandSender sender, String[] args, SenderChecker checker) {
