@@ -17,7 +17,7 @@ public enum InviteRule {
     public static InviteRule get(Team team){
         for (String entry : team.getEntries()) {
             if (entry.equals(ACCEPT_ALL.key)) return ACCEPT_ALL;
-            if (entry.startsWith(ACCEPT_ALL.key)) return ACCEPT_KEY;
+            if (entry.startsWith(ACCEPT_KEY.key)) return ACCEPT_KEY;
         }
         return DEFAULT;
     }

@@ -111,6 +111,6 @@ public class Member {
     }
 
     public boolean hasAuthority(){
-        return isMember() && isOwner() || isAdmin();
+        return isMember() && (isOwner() || isAdmin());
     }
 }
