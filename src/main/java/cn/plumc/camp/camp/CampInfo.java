@@ -129,13 +129,15 @@ public class CampInfo {
 
     public boolean setInviteRule(UUID handler, InviteRule inviteRule) {
         InviteRule.set(team, inviteRule, null);
+        this.inviteRule = inviteRule;
         log(handler, "加入规则已被修改为 %s".formatted(inviteRule.info));
         return true;
     }
 
     public boolean setAcceptKey(UUID handler, String key){
-        InviteRule.set(team, this.inviteRule, key);
-        log(handler, "加入规则已被修改为 %s : %s".formatted(inviteRule.info, key));
+        InviteRule.set(team, InviteRule.ACCEPT_KEY, key);
+        this.inviteRule = InviteRule.ACCEPT_KEY;
+        log(handler, "加入规则已被修改为 %s : %s".formatted(this.inviteRule.info, key));
         return true;
     }
 

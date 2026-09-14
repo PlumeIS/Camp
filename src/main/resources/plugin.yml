@@ -10,7 +10,7 @@ authors: [ PlumeIS ]
 commands:
   camp:
     description: Main command of Camp
-    usage: /<command> [create/disband/list/auth/modify/member]
+    usage: /<command> [create/disband/list/auth/join/leave/modify/member]
     permissions: camp
 
 permissions:
@@ -22,9 +22,35 @@ permissions:
     default: true
   camp.list:
     default: true
-  camp.list.camp:
+  camp.list.member:
     default: true
   camp.auth.rankup:
     default: true
   camp.auth.rankdown:
+    default: true
+  camp.join:
+    default: true
+  camp.join.other:
+    default: op
+  camp.leave:
+    default: true
+  camp.leave.other:
+    default: op
+  camp.modify.name:
+    default: true
+  camp.modify.color:
+    default: true
+  camp.rule:
+    default: true
+  camp.member.invite:
+    default: true
+  camp.member.accept:
+    default: true
+  camp.member.reject:
+    default: true
+  camp.member.kick:
+    default: true
+  camp.member.ban:
+    default: true
+  camp.member.pardon:
     default: true
