@@ -1,1 +1,4 @@
 excepts: []
+logs:
+  # Temporary preview window; permanent journals retain all recorded operations.
+  preview-limit: 200

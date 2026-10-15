@@ -5,6 +5,7 @@ import cn.plumc.camp.camp.CampInfo;
 import cn.plumc.camp.camp.InviteRule;
 import cn.plumc.camp.camp.Member;
 import cn.plumc.camp.utils.SenderChecker;
+import cn.plumc.camp.utils.TeamColors;
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
@@ -29,7 +30,8 @@ public class CampCommand implements TabCompleter, CommandExecutor {
     public static final String PREFIX = "&8[&aCamp&8]&f ";
     public static final String CAMP_ID_PATTERN = "\\w+";
 
-    public static final HashMap<UUID, UUID> rankUpConfirms = new HashMap<>();
+    public record Promotion(UUID target, String campId, long expiresAt) {}
+    public static final HashMap<UUID, Promotion> rankUpConfirms = new HashMap<>();
 
     enum SubCommands{
         CREATE("create"),   // camp.create[default]
@@ -38,8 +40,10 @@ public class CampCommand implements TabCompleter, CommandExecutor {
         AUTH("auth"),       // camp.auth.rankup[isOwner|op] ; camp.auth.rankdown[isOwner|op]
         JOIN("join"),       // camp.join[!isMember] ; camp.join.other[op]
         LEAVE("leave"),     // camp.leave[isMember] ; camp.leave.other[op]
-        MODIFY("modify"),   // camp.modify.name[isAdmin|op] ; camp.modify.color[isAdmin|op] ; camp.rule[isAdmin|op]
+        MODIFY("modify"),   // camp.modify.name[isAdmin|op] ; camp.modify.color[op] ; camp.rule[isAdmin|op]
         MEMBER("member"),   // camp.member.invite[isMember] ; camp.member.accept[isAdmin|op] ; camp.member.reject[isAdmin|op] ; camp.member.kick[isAdmin|op] ; camp.member.ban[isAdmin|op]; camp.member.pardon[isAdmin|op]
+        UI("ui"),
+        EXPORT("export"),
         NULL("null");
 
         public final String command;
@@ -64,7 +68,10 @@ public class CampCommand implements TabCompleter, CommandExecutor {
 
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
-        if (args.length == 0) {return help(sender);}
+        if (args.length == 0) {
+            if (sender instanceof Player player) return openMenu(player, new String[]{"ui"});
+            return help(sender);
+        }
 
         SenderChecker senderChecker = new SenderChecker(sender);
         try {
@@ -77,17 +84,21 @@ public class CampCommand implements TabCompleter, CommandExecutor {
                 case LEAVE -> leave(sender, args, senderChecker);
                 case MODIFY -> modify(sender, args, senderChecker);
                 case MEMBER -> member(sender, args, senderChecker);
+                case UI -> sender instanceof Player player ? openMenu(player, args) : failure(sender, "此命令必须由玩家执行。");
+                case EXPORT -> export(sender, args);
                 case NULL -> help(sender);
             };
+        } catch (IllegalArgumentException e) {
+            return failure(sender, e.getMessage());
         } catch (Exception e) {
-            Camp.INSTANCE.logger.log(Level.WARNING, e.getMessage());
+            Camp.INSTANCE.logger.log(Level.WARNING, "Camp command failed", e);
             return failure(sender, "执行命令时出现意外错误");
         }
 
     }
 
     public boolean create(CommandSender sender, String[] args, SenderChecker checker) {
-        if (checker.op().console().all) {
+        if (checker.op().all && (checker.console().all || checker.member().all)) {
             if (args.length != 3 || !String.valueOf(args[1]).matches(CAMP_ID_PATTERN)) return failure(sender, "参数错误。");
             Camp.INSTANCE.createCamp(null, args[1], args[2]);
             return success(sender, "阵营已创建。");
@@ -102,17 +113,19 @@ public class CampCommand implements TabCompleter, CommandExecutor {
     }
 
     public boolean disband(CommandSender sender, String[] args, SenderChecker checker) {
+        if (args.length > 2) return failure(sender, "参数错误。");
         if (args.length >= 2 && checker.op().all) {
             if (!Camp.INSTANCE.hasCamp(args[1])) return failure(sender, "无此阵营。");
-            Camp.INSTANCE.disbandCamp(args[1]);
+            Camp.INSTANCE.disbandCamp(checker.toUUID(), args[1]);
             return success(sender, "阵营已解散。");
         }
         if (checker.nonplayer().all) return failure(sender, "此命令必须由玩家执行。");
         if (checker.nonmember().all) return failure(sender, "你不处于任何一个阵营。");
         if (!checker.owner().all) return failure(sender, "你不是当前阵营的拥有者。");
         if (checker.np("camp.disband").nonop().all) return failure(sender, "权限不足。");
+        if (args.length == 2 && !Camp.INSTANCE.getCamp(checker.toUUID()).id.equals(args[1])) return failure(sender, "你不是目标阵营的拥有者。");
 
-        Camp.INSTANCE.disbandCamp(Camp.INSTANCE.getCamp(checker.toUUID()).id);
+        Camp.INSTANCE.disbandCamp(checker.toUUID(), Camp.INSTANCE.getCamp(checker.toUUID()).id);
         return success(sender, "阵营已解散。");
     }
 
@@ -140,6 +153,7 @@ public class CampCommand implements TabCompleter, CommandExecutor {
                 if (counter >= 2) {
                     success(sender, sb.toString());
                     sb = new StringBuilder();
+                    counter = 0;
                 }
             }
             success(sender, sb.toString());
@@ -150,15 +164,17 @@ public class CampCommand implements TabCompleter, CommandExecutor {
 
     public boolean auth(CommandSender sender, String[] args, SenderChecker checker) {
         if (!checker.member().op().any) return failure(sender, "你不处于任何一个阵营。");
-        if (args.length != 3) return failure(sender, "参数错误。");
-        OfflinePlayer target = Bukkit.getServer().getOfflinePlayer(args[2]);
+        if (args.length != 3 && args.length != 4) return failure(sender, "参数错误。");
+        OfflinePlayer target = resolvePlayer(args[args.length - 1]);
         if (!Camp.INSTANCE.isCampMember(target.getUniqueId())) return failure(sender, "目标不处于任何一个阵营。");
         CampInfo camp = Camp.INSTANCE.getCamp(target.getUniqueId());
+        if (args.length == 4 && !camp.id.equals(args[2])) return failure(sender, "目标的阵营已变化，请刷新界面。");
         if (!(checker.op().all || (checker.player().all && camp.hasExistingMember(checker.toUUID())))) return failure(sender, "你与目标不处于同一阵营。");
         if (!(checker.op().all || camp.getExistingMember(checker.toUUID()).isOwner())) return failure(sender, "你不是阵营拥有者。");
         Member member = camp.getExistingMember(target.getUniqueId());
-        UUID handler = checker.player().all ? checker.toUUID() : UUID.nameUUIDFromBytes(Bukkit.getConsoleSender().getName().getBytes());
+        UUID handler = handlerUUID(checker);
         if (args[1].equalsIgnoreCase("rankup")) {
+            if (member.isOwner()) return failure(sender, "目标已是拥有者。");
             if (checker.nonop().all && member.uuid.equals(handler)) return failure(sender, "你不能提升自己的权限。");
             if (checker.np("camp.auth.rankup").nonop().all) return failure(sender, "权限不足。");
             if (!member.isAdmin()) {
@@ -166,21 +182,24 @@ public class CampCommand implements TabCompleter, CommandExecutor {
                 return success(sender, "%s 已成为管理员。".formatted(member.name));
             }
             else {
-                if (rankUpConfirms.containsKey(handler) && rankUpConfirms.get(handler).equals(member.uuid)) {
+                Promotion pending = rankUpConfirms.get(handler);
+                if (pending != null && pending.target().equals(member.uuid) && pending.campId().equals(camp.id)
+                        && pending.expiresAt() >= System.currentTimeMillis()) {
                     camp.setOwner(handler, member.uuid);
                     rankUpConfirms.remove(handler);
                     return success(sender, "%s 已成为新的阵营拥有者。".formatted(member.name));
                 } else {
-                    rankUpConfirms.put(handler, member.uuid);
+                    Promotion confirmation = new Promotion(member.uuid, camp.id, System.currentTimeMillis() + 20000);
+                    rankUpConfirms.put(handler, confirmation);
                     Bukkit.getScheduler().runTaskLater(Camp.INSTANCE, ()->{
-                        if (rankUpConfirms.containsKey(handler)) success(sender, ChatColor.GRAY+"交换已取消");
-                        rankUpConfirms.remove(handler);
+                        if (rankUpConfirms.remove(handler, confirmation)) success(sender, ChatColor.GRAY+"交换已取消");
                     }, 20*20);
                     return success(sender, ChatColor.YELLOW+"正在交换拥有者，请在20s内再次输入重复命令以确认交换。");
                 }
             }
         }
         if (args[1].equalsIgnoreCase("rankdown")) {
+            if (member.isOwner()) return failure(sender, "请先转让拥有者。");
             if (checker.nonop().all && member.uuid.equals(handler)) return failure(sender, "你不能降低自己的权限，请使用/camp auth rankup <target>转让拥有者。");
             if (checker.np("camp.auth.rankdown").nonop().all) return failure(sender, "权限不足。");
             if (member.isAdmin()) {
@@ -197,9 +216,22 @@ public class CampCommand implements TabCompleter, CommandExecutor {
      * camp.join.other[op] : op 可将其他玩家直接加入阵营(绕过加入规则)。
      */
     public boolean join(CommandSender sender, String[] args, SenderChecker checker) {
+        boolean self = args.length >= 3 && args[2].equalsIgnoreCase("--self");
+        if (self) {
+            if (args.length > 4) return failure(sender, "参数错误。");
+            args = args.length == 4 ? new String[]{"join", args[1], args[3]} : new String[]{"join", args[1]};
+        }
+        if (args.length == 4 && args[2].equalsIgnoreCase("--player")) {
+            if (!sender.isOp() || !sender.hasPermission("camp.join.other")) return failure(sender, "权限不足。");
+            CampInfo camp = Camp.INSTANCE.getCamp(args[1]);
+            if (camp == null) return failure(sender, "无此阵营。");
+            OfflinePlayer target = resolvePlayer(args[3]);
+            if (!camp.addMember(handlerUUID(checker), target.getUniqueId())) return failure(sender, "目标已在该阵营或处于黑名单中。");
+            return success(sender, "目标已加入阵营。");
+        }
         // op 使用 camp.join.other: /camp join <campId> <player>
-        if (args.length >= 3 && checker.op().all && checker.p("camp.join.other").all) {
-            OfflinePlayer target = Bukkit.getOfflinePlayer(args[2]);
+        if (!self && args.length == 3 && isPlayerToken(args[2]) && checker.op().all && checker.p("camp.join.other").all) {
+            OfflinePlayer target = resolvePlayer(args[2]);
             // args[2] 是已知玩家(且非自己)时视为替他人加入,否则按玩家主动加入解析(密钥/附言)
             if ((target.hasPlayedBefore() || target.isOnline()) && !target.getUniqueId().equals(checker.toUUID())) {
                 if (!checker.camp(args[1]).all) return failure(sender, "无此阵营。");
@@ -233,7 +265,8 @@ public class CampCommand implements TabCompleter, CommandExecutor {
                 return success(sender, "你已加入阵营 %s。".formatted(camp.nameContent));
             }
             default -> {
-                camp.inviteMember(checker.toUUID(), checker.toUUID(), args.length == 3 ? args[2] : null);
+                if (!camp.inviteMember(checker.toUUID(), checker.toUUID(), args.length == 3 ? args[2] : null))
+                    return failure(sender, "申请未提交，请检查是否已有申请或已被拉黑。");
                 return success(sender, "你已向阵营 %s 提交申请,等待管理员处理。".formatted(camp.nameContent));
             }
         }
@@ -244,11 +277,13 @@ public class CampCommand implements TabCompleter, CommandExecutor {
      * camp.leave.other[op] : op 可将其他玩家移出指定阵营。
      */
     public boolean leave(CommandSender sender, String[] args, SenderChecker checker) {
+        if (args.length != 1 && args.length != 2 && !(args.length == 3 && sender.isOp())) return failure(sender, "参数错误。");
+        if (args.length == 3 && !sender.hasPermission("camp.leave.other")) return failure(sender, "权限不足。");
         // op 使用 camp.leave.other: /camp leave <campId> <player>
         if (args.length >= 3 && checker.op().all && checker.p("camp.leave.other").all) {
             if (!checker.camp(args[1]).all) return failure(sender, "无此阵营。");
             CampInfo camp = Camp.INSTANCE.getCamp(args[1]);
-            OfflinePlayer target = Bukkit.getOfflinePlayer(args[2]);
+            OfflinePlayer target = resolvePlayer(args[2]);
             Member member = camp.getExistingMember(target.getUniqueId());
             if (member == null) return failure(sender, "该玩家不在该阵营内。");
             if (member.isOwner()) return failure(sender, "该玩家是阵营拥有者,请先解散阵营或转让拥有者。");
@@ -260,10 +295,11 @@ public class CampCommand implements TabCompleter, CommandExecutor {
         if (checker.nonmember().all) return failure(sender, "你不处于任何一个阵营。");
         if (checker.np("camp.leave").nonop().all) return failure(sender, "权限不足。");
         CampInfo camp = Camp.INSTANCE.getCamp(checker.toUUID());
+        if (args.length == 2 && !camp.id.equals(args[1])) return failure(sender, "你的阵营已变化，请刷新界面。");
         Member member = camp.getExistingMember(checker.toUUID());
         if (member.isOwner()) {
             if (camp.getMembers().size() > 1) return failure(sender, "你是阵营拥有者,请先转让拥有者或解散阵营。");
-            Camp.INSTANCE.disbandCamp(camp.id);
+            Camp.INSTANCE.disbandCamp(checker.toUUID(), camp.id);
             return success(sender, "你是最后一个成员,阵营已解散。");
         }
         camp.kickMember(checker.toUUID(), checker.toUUID());
@@ -272,7 +308,7 @@ public class CampCommand implements TabCompleter, CommandExecutor {
 
     /**
      * camp.modify.name[isAdmin|op] : /camp modify name <name> (op: <campId> <name>)
-     * camp.modify.color[isAdmin|op] : /camp modify color <color> (op: <campId> <color>)
+     * camp.modify.color[op] : /camp modify color <color> (op: <campId> <color>)
      * camp.rule[isAdmin|op] : /camp modify rule <default|accept_all|accept_key> [key] (op: <campId> <rule> [key])
      */
     public boolean modify(CommandSender sender, String[] args, SenderChecker checker) {
@@ -288,7 +324,7 @@ public class CampCommand implements TabCompleter, CommandExecutor {
     private boolean modifyName(CommandSender sender, String[] args, SenderChecker checker) {
         CampInfo camp;
         String name;
-        if (checker.op().all && args.length == 4) {
+        if (args.length == 4) {
             if (!checker.camp(args[2]).all) return failure(sender, "无此阵营。");
             camp = Camp.INSTANCE.getCamp(args[2]);
             name = args[3];
@@ -300,6 +336,7 @@ public class CampCommand implements TabCompleter, CommandExecutor {
             name = args[2];
         }
         if (!checkCampAdmin(sender, checker, camp, "camp.modify.name")) return true;
+        if (name.isBlank() || name.length() > 128) return failure(sender, "阵营名称不能为空，且最多 128 个字符。");
         Component displayName = LegacyComponentSerializer.legacyAmpersand().deserialize(name);
         camp.team.displayName(displayName);
         camp.name = displayName;
@@ -309,9 +346,10 @@ public class CampCommand implements TabCompleter, CommandExecutor {
     }
 
     private boolean modifyColor(CommandSender sender, String[] args, SenderChecker checker) {
+        if (!checker.op().all) return failure(sender, "只有 OP 可以修改阵营颜色。");
         CampInfo camp;
         String colorName;
-        if (checker.op().all && args.length == 4) {
+        if (args.length == 4) {
             if (!checker.camp(args[2]).all) return failure(sender, "无此阵营。");
             camp = Camp.INSTANCE.getCamp(args[2]);
             colorName = args[3];
@@ -323,19 +361,23 @@ public class CampCommand implements TabCompleter, CommandExecutor {
             colorName = args[2];
         }
         if (!checkCampAdmin(sender, checker, camp, "camp.modify.color")) return true;
-        NamedTextColor color = NamedTextColor.NAMES.value(colorName.toLowerCase());
+        NamedTextColor color = TeamColors.fromName(colorName);
         if (color == null) return failure(sender, "未知颜色,仅支持 16 种基础颜色名。");
         camp.team.color(color);
         camp.color = color;
-        camp.log(handlerUUID(checker), "修改阵营颜色为 %s".formatted(color.toString()));
-        return success(sender, "阵营颜色已修改为 %s。".formatted(color.toString()));
+        camp.log(handlerUUID(checker), "修改阵营颜色为 %s".formatted(TeamColors.name(color)));
+        return success(sender, "阵营颜色已修改为 %s。".formatted(TeamColors.name(color)));
     }
 
     private boolean modifyRule(CommandSender sender, String[] args, SenderChecker checker) {
         CampInfo camp;
         int ruleIndex;
-        // op 形式: /camp modify rule <campId> <rule> [key];4 个参数时若 args[2] 是规则名则按玩家形式解析
-        if (checker.op().all && args.length >= 4 && (args.length >= 5 || checker.camp(args[2]).all || !isRule(args[2]))) {
+        // The explicit marker removes ambiguity when a camp ID or a key is also a rule name.
+        if (args.length >= 5 && args[2].equalsIgnoreCase("--camp")) {
+            if (!checker.camp(args[3]).all) return failure(sender, "无此阵营。");
+            camp = Camp.INSTANCE.getCamp(args[3]);
+            ruleIndex = 4;
+        } else if (args.length >= 4 && (args.length >= 5 || !isRule(args[2]) || (checker.camp(args[2]).all && isRule(args[3])))) {
             if (!checker.camp(args[2]).all) return failure(sender, "无此阵营。");
             camp = Camp.INSTANCE.getCamp(args[2]);
             ruleIndex = 3;
@@ -390,11 +432,15 @@ public class CampCommand implements TabCompleter, CommandExecutor {
         if (checker.nonplayer().all) return failure(sender, "此命令必须由玩家执行。");
         if (checker.nonmember().all) return failure(sender, "你不处于任何一个阵营。");
         if (checker.np("camp.member.invite").nonop().all) return failure(sender, "权限不足。");
-        if (args.length != 3) return failure(sender, "参数错误。");
-        Player target = Bukkit.getPlayerExact(args[2]);
+        if (args.length != 3 && args.length != 4) return failure(sender, "参数错误。");
+        Player target;
+        String targetToken = args[args.length - 1];
+        try { target = Bukkit.getPlayer(UUID.fromString(targetToken)); }
+        catch (IllegalArgumentException ignored) { target = Bukkit.getPlayerExact(targetToken); }
         if (target == null) return failure(sender, "目标玩家不在线。");
         if (target.getUniqueId().equals(checker.toUUID())) return failure(sender, "不能邀请自己。");
         CampInfo camp = Camp.INSTANCE.getCamp(checker.toUUID());
+        if (args.length == 4 && !camp.id.equals(args[2])) return failure(sender, "你与目标阵营无关。");
         if (camp.hasExistingMember(target.getUniqueId())) return failure(sender, "该玩家已在你所在的阵营内。");
         if (camp.inBlackList(target.getUniqueId())) return failure(sender, "该玩家在你所在阵营的黑名单中。");
 
@@ -402,7 +448,7 @@ public class CampCommand implements TabCompleter, CommandExecutor {
                 .deserialize((PREFIX + "&e%s &f邀请你加入阵营 &e%s &f".formatted(sender.getName(), camp.nameContent)).replace("&", "§"))
                 .append(LegacyComponentSerializer.legacySection()
                         .deserialize("&a[点击加入]".replace("&", "§"))
-                        .clickEvent(ClickEvent.runCommand("/camp join " + camp.id))
+                        .clickEvent(ClickEvent.runCommand(camp.inviteRule == InviteRule.ACCEPT_KEY ? "/camp ui " + camp.id : "/camp join " + camp.id))
                         .hoverEvent(HoverEvent.showText(Component.text("点击加入阵营 " + camp.id))));
         ((Audience) target).sendMessage(message);
         return success(sender, "已向 %s 发送邀请,对方点击聊天框中的 [点击加入] 即可。".formatted(target.getName()));
@@ -411,7 +457,7 @@ public class CampCommand implements TabCompleter, CommandExecutor {
     private boolean memberManage(CommandSender sender, String[] args, SenderChecker checker, String action, String permission) {
         CampInfo camp;
         String playerName;
-        if (checker.op().all && args.length == 4) {
+        if (args.length == 4) {
             if (!checker.camp(args[2]).all) return failure(sender, "无此阵营。");
             camp = Camp.INSTANCE.getCamp(args[2]);
             playerName = args[3];
@@ -424,7 +470,7 @@ public class CampCommand implements TabCompleter, CommandExecutor {
         }
         if (!checkCampAdmin(sender, checker, camp, permission)) return true;
         UUID handler = handlerUUID(checker);
-        OfflinePlayer targetPlayer = Bukkit.getOfflinePlayer(playerName);
+        OfflinePlayer targetPlayer = resolvePlayer(playerName);
         UUID uuid = targetPlayer.getUniqueId();
         Member member = camp.getExistingMember(uuid);
         switch (action) {
@@ -461,13 +507,15 @@ public class CampCommand implements TabCompleter, CommandExecutor {
 
     public boolean help(CommandSender sender){
         success(sender, "&e========= &aCamp 阵营插件 &e=========");
+        success(sender, "&f/camp ui [阵营id] &7- 打开箱子界面；/camp export - 导出 Excel (op/导出权限)");
         success(sender, "&f/camp create <id> <名称> &7- 创建阵营");
         success(sender, "&f/camp disband [阵营id] &7- 解散阵营(拥有者/op)");
         success(sender, "&f/camp list [阵营id] &7- 查看阵营列表 / 成员列表");
         success(sender, "&f/camp auth rankup|rankdown <玩家> &7- 任命/罢免管理员,再次 rankup 转让拥有者");
         success(sender, "&f/camp join <阵营id> [密钥|附言] &7- 加入阵营 / 提交申请");
         success(sender, "&f/camp leave &7- 离开当前阵营");
-        success(sender, "&f/camp modify name|color|rule <值> [密钥] &7- 修改阵营名称/颜色/加入规则(管理员)");
+        success(sender, "&f/camp modify name|rule <值> [密钥] &7- 修改阵营名称/加入规则(管理员)");
+        success(sender, "&f/camp modify color [阵营id] <颜色> &7- 修改阵营颜色(仅 OP)");
         success(sender, "&f/camp member invite <玩家> &7- 邀请在线玩家加入");
         success(sender, "&f/camp member accept|reject <玩家> &7- 接受/拒绝加入申请(管理员)");
         success(sender, "&f/camp member kick|ban|pardon <玩家> &7- 踢出/拉黑/解除拉黑(管理员)");
@@ -488,7 +536,7 @@ public class CampCommand implements TabCompleter, CommandExecutor {
     public @Nullable List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         List<String> campIds = Camp.INSTANCE.camps.stream().map(c -> c.id).toList();
         List<String> playerNames = Bukkit.getOnlinePlayers().stream().map(Player::getName).toList();
-        List<String> colorNames = NamedTextColor.NAMES.keys().stream().toList();
+        List<String> colorNames = TeamColors.names();
 
         if (args.length == 1) {
             return filter(Arrays.stream(SubCommands.values()).filter(c -> !c.equals(SubCommands.NULL)).map(c -> c.command).toList(), args[0]);
@@ -496,7 +544,7 @@ public class CampCommand implements TabCompleter, CommandExecutor {
 
         return switch (SubCommands.fromString(args[0])) {
             case DISBAND -> sender.isOp() && args.length == 2 ? filter(campIds, args[1]) : List.of();
-            case LIST -> args.length == 2 ? filter(campIds, args[1]) : List.of();
+            case LIST, UI -> args.length == 2 ? filter(campIds, args[1]) : List.of();
             case AUTH -> switch (args.length) {
                 case 2 -> filter(List.of("rankup", "rankdown"), args[1]);
                 case 3 -> filter(playerNames, args[2]);
@@ -545,7 +593,8 @@ public class CampCommand implements TabCompleter, CommandExecutor {
     /** 校验执行者是否为该阵营管理员(或 op)并持有指定权限,失败时已发送原因。 */
     private boolean checkCampAdmin(CommandSender sender, SenderChecker checker, CampInfo camp, String permission) {
         if (checker.nonplayer().nonop().all) { failure(sender, "此命令必须由玩家执行。"); return false; }
-        if (!(checker.op().all || (checker.player().all && camp.getExistingMember(checker.toUUID()).hasAuthority()))) {
+        Member actor = checker.toUUID() == null ? null : camp.getExistingMember(checker.toUUID());
+        if (!(checker.op().all || (actor != null && actor.hasAuthority()))) {
             failure(sender, "你不是该阵营的管理员。");
             return false;
         }
@@ -553,10 +602,10 @@ public class CampCommand implements TabCompleter, CommandExecutor {
         return true;
     }
 
-    /** 获取操作者 UUID:玩家为自身,控制台为固定 UUID。 */
+    /** Null identifies console actions in persistent logs. */
     private UUID handlerUUID(SenderChecker checker) {
         if (checker.player().all) return checker.toUUID();
-        return UUID.nameUUIDFromBytes(Bukkit.getConsoleSender().getName().getBytes());
+        return null;
     }
 
     /** 玩家是否已在任意阵营存在待处理的加入申请(IDLE)。 */
@@ -566,5 +615,32 @@ public class CampCommand implements TabCompleter, CommandExecutor {
             if (member != null && member.inIDLE()) return true;
         }
         return false;
+    }
+
+    public static OfflinePlayer resolvePlayer(String token) {
+        try { return Bukkit.getOfflinePlayer(UUID.fromString(token)); }
+        catch (IllegalArgumentException ignored) {
+            if (!token.matches("[A-Za-z0-9_]{1,16}")) throw new IllegalArgumentException("玩家名称或 UUID 无效。");
+            return Bukkit.getOfflinePlayer(token);
+        }
+    }
+
+    private static boolean isPlayerToken(String token) {
+        return token.matches("[A-Za-z0-9_]{1,16}") || token.matches("[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}");
+    }
+
+    private boolean openMenu(Player player, String[] args) {
+        if (!player.isOp() && !player.hasPermission("camp.ui")) return failure(player, "权限不足。");
+        if (args.length > 2) return failure(player, "参数错误。");
+        if (args.length == 2 && !Camp.INSTANCE.hasCamp(args[1])) return failure(player, "无此阵营。");
+        Camp.INSTANCE.getMenus().open(player, args.length == 2 ? args[1] : null);
+        return true;
+    }
+
+    private boolean export(CommandSender sender, String[] args) {
+        if (args.length != 1) return failure(sender, "用法: /camp export");
+        if (!sender.isOp() && !sender.hasPermission("camp.export")) return failure(sender, "权限不足。");
+        Camp.INSTANCE.getExporter().export(sender);
+        return true;
     }
 }

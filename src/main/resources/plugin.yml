@@ -10,10 +10,14 @@ authors: [ PlumeIS ]
 commands:
   camp:
     description: Main command of Camp
-    usage: /<command> [create/disband/list/auth/join/leave/modify/member]
-    permissions: camp
+    usage: /<command> [ui/create/disband/list/auth/join/leave/modify/member/export]
+    permission: camp
 
 permissions:
+  camp.ui:
+    default: true
+  camp.export:
+    default: op
   camp:
     default: true
   camp.create:
@@ -39,7 +43,7 @@ permissions:
   camp.modify.name:
     default: true
   camp.modify.color:
-    default: true
+    default: op
   camp.rule:
     default: true
   camp.member.invite:
